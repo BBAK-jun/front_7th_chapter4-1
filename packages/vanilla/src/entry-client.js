@@ -5,6 +5,8 @@ import { loadCartFromStorage } from "./services/index.js";
 import { router } from "./router/index.js";
 import { BASE_URL } from "./constants.js";
 
+import { hydrateStoreFromSSR } from "./utils/hydration.js";
+
 const enableMocking = () =>
   import("./mocks/browser.js").then(({ worker }) =>
     worker.start({
@@ -19,6 +21,9 @@ function main() {
   registerAllEvents();
   registerGlobalEvents();
   loadCartFromStorage();
+
+  hydrateStoreFromSSR();
+
   initRender();
   router.start();
 }
