@@ -1,10 +1,21 @@
+const isServer = () => typeof window === "undefined";
+
+const inMemoryStorage = (() => {
+  const map = new Map();
+  return {
+    getItem: (k) => (map.has(k) ? map.get(k) : null),
+    setItem: (k, v) => map.set(k, v),
+    removeItem: (k) => map.delete(k),
+  };
+})();
+
 /**
  * 로컬스토리지 추상화 함수
  * @param {string} key - 스토리지 키
  * @param {Storage} storage - 기본값은 localStorage
  * @returns {Object} { get, set, reset }
  */
-export const createStorage = (key, storage = window.localStorage) => {
+export const createStorage = (key, storage = isServer() ? inMemoryStorage : window.localStorage) => {
   const get = () => {
     try {
       const item = storage.getItem(key);
