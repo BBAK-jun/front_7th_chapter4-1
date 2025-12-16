@@ -1,4 +1,4 @@
-import fs from "fs";
+import fs from "fs/promises";
 import path from "path";
 import { fileURLToPath } from "url";
 
@@ -31,7 +31,7 @@ async function generateStaticSite() {
 
     // Read HTML template from dist
     const templatePath = path.resolve(__dirname, "../../dist/vanilla/index.html");
-    const originalTemplate = fs.readFileSync(templatePath, "utf-8");
+    const originalTemplate = await fs.readFile(templatePath, "utf-8");
 
     console.log("Generating static site...");
 
@@ -43,7 +43,7 @@ async function generateStaticSite() {
     if (homeResult.initialScript) {
       homeHtml = homeHtml.replace("</head>", `${homeResult.initialScript}\n  </head>`);
     }
-    fs.writeFileSync(templatePath, homeHtml);
+    await fs.writeFile(templatePath, homeHtml);
     console.log("✓ Generated static site for home page");
 
     // Get all products from mock data
@@ -64,7 +64,7 @@ async function generateStaticSite() {
 
         // Create product directory
         const productDir = path.resolve(__dirname, `../../dist/vanilla/product/${productId}`);
-        fs.mkdirSync(productDir, { recursive: true });
+        await fs.mkdir(productDir, { recursive: true });
 
         // Use FRESH template for each product (not the modified home template)
         let productHtml = originalTemplate
@@ -74,7 +74,7 @@ async function generateStaticSite() {
           productHtml = productHtml.replace("</head>", `${productResult.initialScript}\n  </head>`);
         }
 
-        fs.writeFileSync(path.join(productDir, "index.html"), productHtml);
+        await fs.writeFile(path.join(productDir, "index.html"), productHtml);
         return { productId, success: true };
       } catch (error) {
         console.error(`Failed to generate product ${productId}:`, error.message);
