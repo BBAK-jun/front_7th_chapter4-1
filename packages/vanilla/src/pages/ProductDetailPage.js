@@ -2,6 +2,8 @@ import { productStore } from "../stores";
 import { loadProductDetailForPage } from "../services";
 import { router, withLifecycle } from "../router";
 import { PageWrapper } from "./PageWrapper.js";
+import { getProduct, getProducts } from "../api/productApi";
+import { withContextCache } from "../utils/context-cache.js";
 
 const loadingContent = `
   <div class="min-h-screen bg-gray-50 flex items-center justify-center">
@@ -231,21 +233,12 @@ function ProductDetail({ product, relatedProducts = [] }) {
   `;
 }
 
-/**
- * 상품 상세 페이지 컴포넌트
- */
-export const ProductDetailPage = withLifecycle(
-  {
-    onMount: () => {
-      loadProductDetailForPage(router.params.id);
-    },
-    watches: [() => [router.params.id], () => loadProductDetailForPage(router.params.id)],
-  },
-  () => {
-    const { currentProduct: product, relatedProducts = [], error, loading } = productStore.getState();
+// 실제 렌더링 로직 (Server/Client 공용)
+const renderProductDetailPage = (productState) => {
+  const { currentProduct: product, relatedProducts = [], error, loading } = productState;
 
-    return PageWrapper({
-      headerLeft: `
+  return PageWrapper({
+    headerLeft: `
         <div class="flex items-center space-x-3">
           <button onclick="window.history.back()" 
                   class="p-2 text-gray-700 hover:text-gray-900 transition-colors">
@@ -256,11 +249,84 @@ export const ProductDetailPage = withLifecycle(
           <h1 class="text-lg font-bold text-gray-900">상품 상세</h1>
         </div>
       `.trim(),
-      children: loading
-        ? loadingContent
-        : error && !product
-          ? ErrorContent({ error })
-          : ProductDetail({ product, relatedProducts }),
-    });
+    children: loading
+      ? loadingContent
+      : error && !product
+        ? ErrorContent({ error })
+        : ProductDetail({ product, relatedProducts }),
+  });
+};
+
+export const serverSideRender = (initialData) => {
+  const productState = {
+    currentProduct: initialData.currentProduct,
+    relatedProducts: initialData.relatedProducts,
+    loading: initialData.loading,
+    error: initialData.error,
+  };
+  return renderProductDetailPage(productState);
+};
+
+/**
+ * 상품 상세 페이지 컴포넌트
+ */
+export const ProductDetailPage = withLifecycle(
+  {
+    onMount: () => {
+      const params = router.params;
+      const currentProduct = productStore.getState().currentProduct;
+
+      // 이미 데이터가 있고 현재 페이지와 일치하면 로드 건너뛰기
+      if (currentProduct?.productId === params.id) {
+        return;
+      }
+      loadProductDetailForPage(params.id);
+    },
+    watches: [() => [router.params.id], () => loadProductDetailForPage(router.params.id)],
+  },
+  () => {
+    return renderProductDetailPage(productStore.getState());
   },
 );
+
+export const getServerSideProps = async (context) => {
+  const { id } = context.params;
+
+  try {
+    const product = await withContextCache(context, `product-${id}`, () => getProduct(id));
+    let relatedProducts = [];
+
+    if (product?.category2) {
+      try {
+        const response = await withContextCache(context, `relatedProducts-${id}`, () =>
+          getProducts({
+            category2: product.category2,
+            limit: 20,
+            page: 1,
+          }),
+        );
+        relatedProducts = response.products.filter((p) => p.productId !== id);
+      } catch {
+        // 관련 상품 로드 실패는 무시
+      }
+    }
+
+    return {
+      initialData: {
+        currentProduct: product,
+        relatedProducts,
+        loading: false,
+        error: null,
+      },
+    };
+  } catch (error) {
+    return {
+      initialData: {
+        currentProduct: null,
+        relatedProducts: [],
+        loading: false,
+        error: error.message || "Failed to load product",
+      },
+    };
+  }
+};
