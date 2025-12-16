@@ -53,7 +53,8 @@ export class ServerSideRouter {
       .replace(/\//g, "\\/");
 
     // baseUrl은 resolve 단계에서 제거되므로 정규식에는 포함하지 않음
-    const regex = new RegExp(`^${regexPath}$`);
+    // 마지막 슬래시는 있거나 없거나 허용 (/?$)
+    const regex = new RegExp(`^${regexPath}/?$`);
 
     this.#routes.set(path, {
       regex,
