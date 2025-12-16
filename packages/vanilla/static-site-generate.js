@@ -5,6 +5,20 @@ import { fileURLToPath } from "url";
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
+// Helper function to process products in chunks
+async function processInChunks(items, chunkSize, processFn) {
+  const results = [];
+  for (let i = 0; i < items.length; i += chunkSize) {
+    const chunk = items.slice(i, i + chunkSize);
+    console.log(
+      `Processing chunk ${Math.floor(i / chunkSize) + 1}/${Math.ceil(items.length / chunkSize)} (${chunk.length} items)...`,
+    );
+    const chunkResults = await Promise.all(chunk.map(processFn));
+    results.push(...chunkResults);
+  }
+  return results;
+}
+
 async function generateStaticSite() {
   try {
     // Start MSW server for API mocking
@@ -39,10 +53,10 @@ async function generateStaticSite() {
     // Generate all products
     const productsToGenerate = allProducts;
 
-    console.log(`Generating ${productsToGenerate.length} product pages...`);
+    console.log(`Generating ${productsToGenerate.length} product pages in chunks of 100...`);
 
-    // Generate product detail pages
-    for (const product of productsToGenerate) {
+    // Process products in chunks of 100 with parallel processing
+    await processInChunks(productsToGenerate, 100, async (product) => {
       const productId = product.productId;
 
       try {
@@ -61,10 +75,12 @@ async function generateStaticSite() {
         }
 
         fs.writeFileSync(path.join(productDir, "index.html"), productHtml);
+        return { productId, success: true };
       } catch (error) {
         console.error(`Failed to generate product ${productId}:`, error.message);
+        return { productId, success: false, error: error.message };
       }
-    }
+    });
 
     console.log(`✓ Generated static site for ${productsToGenerate.length} products`);
 
