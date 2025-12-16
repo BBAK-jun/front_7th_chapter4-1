@@ -1,20 +1,80 @@
 import fs from "fs";
+import path from "path";
+import { fileURLToPath } from "url";
 
-const render = () => {
-  return `<div>안녕하세요</div>`;
-};
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 async function generateStaticSite() {
-  // HTML 템플릿 읽기
-  const template = fs.readFileSync("../../dist/vanilla/index.html", "utf-8");
+  try {
+    // Start MSW server for API mocking
+    const { server } = await import("./src/mocks/server.js");
+    server.listen({ onUnhandledRequest: "bypass" });
+    console.log("MSW server started for SSG");
 
-  // 어플리케이션 렌더링하기
-  const appHtml = render();
+    // Import the built server entry
+    const { render } = await import("./dist/vanilla-ssr/entry-server.js");
 
-  // 결과 HTML 생성하기
-  const result = template.replace("<!--app-html-->", appHtml);
-  fs.writeFileSync("../../dist/vanilla/index.html", result);
+    // Read HTML template from dist
+    const templatePath = path.resolve(__dirname, "../../dist/vanilla/index.html");
+    const originalTemplate = fs.readFileSync(templatePath, "utf-8");
+
+    console.log("Generating static site...");
+
+    // Generate home page
+    const homeResult = await render("/");
+    let homeHtml = originalTemplate
+      .replace("<!--app-head-->", homeResult.head)
+      .replace("<!--app-html-->", homeResult.body);
+    if (homeResult.initialScript) {
+      homeHtml = homeHtml.replace("</head>", `${homeResult.initialScript}\n  </head>`);
+    }
+    fs.writeFileSync(templatePath, homeHtml);
+    console.log("✓ Generated static site for home page");
+
+    // Get all products from mock data
+    const items = await import("./src/mocks/items.json", { with: { type: "json" } });
+    const allProducts = items.default;
+
+    // Generate all products
+    const productsToGenerate = allProducts;
+
+    console.log(`Generating ${productsToGenerate.length} product pages...`);
+
+    // Generate product detail pages
+    for (const product of productsToGenerate) {
+      const productId = product.productId;
+
+      try {
+        const productResult = await render(`/product/${productId}/`);
+
+        // Create product directory
+        const productDir = path.resolve(__dirname, `../../dist/vanilla/product/${productId}`);
+        fs.mkdirSync(productDir, { recursive: true });
+
+        // Use FRESH template for each product (not the modified home template)
+        let productHtml = originalTemplate
+          .replace("<!--app-head-->", productResult.head)
+          .replace("<!--app-html-->", productResult.body);
+        if (productResult.initialScript) {
+          productHtml = productHtml.replace("</head>", `${productResult.initialScript}\n  </head>`);
+        }
+
+        fs.writeFileSync(path.join(productDir, "index.html"), productHtml);
+      } catch (error) {
+        console.error(`Failed to generate product ${productId}:`, error.message);
+      }
+    }
+
+    console.log(`✓ Generated static site for ${productsToGenerate.length} products`);
+
+    // Stop MSW server
+    server.close();
+  } catch (error) {
+    console.error("Error generating static site:", error);
+    process.exit(1);
+  }
 }
 
-// 실행
+// Run
 generateStaticSite();
